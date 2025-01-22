@@ -2,7 +2,7 @@
 aux_source_directory(. SRC_LIST)
 
 #指定生成可执行文件
-add_executable(CharServer ${SRC_LIST})
+add_executable(ChatServer ${SRC_LIST})
 
 #指定可执行文件链接时需要依赖的库文件
-target_link_libraries(CharServer pthread muduo_net muduo_base)
+target_link_libraries(ChatServer pthread muduo_net muduo_base)

@@ -16,7 +16,7 @@ public:
     void Start();
 
 private:
-    //专门处理用户的连接创建和断开
+    //专门处理用户的连接创建
     auto OnConnection(const muduo::net::TcpConnectionPtr& conn) -> void;
 
     //读写事件的回调函数
