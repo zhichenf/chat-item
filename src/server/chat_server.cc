@@ -2,27 +2,10 @@
 
 #include <functional>
 
-// class ChatServer {
-// public:
-//     ChatServer(muduo::net::EventLoop* loop,                 //事件循环
-//             const muduo::net::InetAddress& listenAddr,      //绑定ip地址和端口号
-//             const std::string& nameArg);
+#include "json.hpp"
 
-//     void Start();
+#include "chat_service.h"
 
-// private:
-//     //专门处理用户的连接创建
-//     auto OnConnection(const muduo::net::TcpConnectionPtr& conn) -> void;
-
-//     //读写事件的回调函数
-//     auto OnMessage(const muduo::net::TcpConnectionPtr& conn,    //连接
-//                     muduo::net::Buffer* buffer,                //缓冲区
-//                     muduo::Timestamp time) -> void;           //时间信息
-
-
-//     muduo::net::TcpServer server_;      //服务器
-//     muduo::net::EventLoop* loop_;       //事件循环指针
-// };
 
 //初始化聊天服务器
 ChatServer::ChatServer(muduo::net::EventLoop* loop,
@@ -50,16 +33,20 @@ void ChatServer::Start() {
 
 //用户连接处理回调函数
 void ChatServer::OnConnection(const muduo::net::TcpConnectionPtr& conn) {
-
+    if(!conn->connected()) {
+        conn->shutdown();
+    }
 }
 
 //用户读写事件处理回调函数
 void ChatServer::OnMessage(const muduo::net::TcpConnectionPtr& conn,    //连接
                      muduo::net::Buffer* buffer,            //缓冲区
                      muduo::Timestamp time) {               //时间信息
-
-
+    std::string buf = buffer->retrieveAllAsString();
+    nlohmann::json js = nlohmann::json::parse(buf);
+    
+    //网络层代码和业务层代码进行解耦
+    //通过js["msgid"]获取  =》 业务handler  =》  conn js time
+    auto msgHandler = ChatService::Instance()->GetHandler(js["msgid"].get<int>());
+    msgHandler(conn,js,time);
 }          
-
-
-
