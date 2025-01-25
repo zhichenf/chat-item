@@ -7,7 +7,10 @@
 
 enum EnMsgType {
     kLoginMsg = 1,      //登录消息
-    kRegMsg
+    kLoginMsgAck,       //登录回应
+    kRegMsg,            //注册消息
+    kRegMsgAck,         //注册回应
+    kOneChatMsg         //1对1聊天消息
 };
 
 #endif

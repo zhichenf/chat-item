@@ -34,6 +34,8 @@ void ChatServer::Start() {
 //用户连接处理回调函数
 void ChatServer::OnConnection(const muduo::net::TcpConnectionPtr& conn) {
     if(!conn->connected()) {
+        //处理异常退出
+        ChatService::Instance()->ClientCloseException(conn);
         conn->shutdown();
     }
 }
