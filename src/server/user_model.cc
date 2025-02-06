@@ -80,3 +80,12 @@ bool UserModel::UpdateState(User& user) {
     }
     return false;
 }
+
+//重置用户的状态信息
+void  UserModel::ResetState() {
+    char sql[1024] = "update User set state = 'offline' where state = 'online';";
+    MySQL mysql;
+    if (mysql.Connect()) {
+        mysql.Update(sql);
+    }
+}

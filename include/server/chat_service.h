@@ -9,6 +9,7 @@
 #include "json.hpp"
 
 #include "user_model.h"
+#include "offline_message_model.h"
 
 using MsgHandler = std::function<void(const muduo::net::TcpConnectionPtr&, 
                                         nlohmann::json&,
@@ -27,6 +28,8 @@ public:
     void OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
     //获取消息对应的处理器
     MsgHandler GetHandler(int msgid);
+    //服务器异常，业务重置
+    void Reset();
     //处理客户端异常退出
     void ClientCloseException(const muduo::net::TcpConnectionPtr conn);
 private:
@@ -41,6 +44,7 @@ private:
 
     //数据操作类对象
     UserModel user_model_;
+    OfflineMsgModel offline_msg_model_;
 };
 
 

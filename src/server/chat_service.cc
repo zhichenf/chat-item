@@ -2,6 +2,9 @@
 
 #include <muduo/base/Logging.h>
 
+#include <vector>
+#include <string>
+
 #include "public.h"
 
 //获取单例对象的接口函数
@@ -58,6 +61,14 @@ void ChatService::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json
             response["errno"] = 0;
             response["id"] = user.GetId();
             response["name"] = user.GetName();
+            
+            //检查是否有离线消息，如果有，则要一起发送回去
+            std::vector<std::string> vec = offline_msg_model_.Query(user.GetId());
+            if (!vec.empty()) {
+                response["offlinemsg"] = vec;
+                offline_msg_model_.Remove(user.GetId());
+            }
+
             conn->send(response.dump());
         }
     } else {
@@ -110,7 +121,13 @@ void ChatService::OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::js
     }
 
     //发送给的用户不在线
+    offline_msg_model_.Insert(to_id,js.dump());
+}
 
+//服务器异常，业务重置
+void ChatService::Reset() {
+    //把online状态的用户设置为offline
+    user_model_.ResetState();
 }
 
 //处理客户端异常退出
