@@ -15,7 +15,7 @@ server_(loop,listenAddr,nameArg),
 loop_(loop) {
     using namespace std::placeholders;
 
-    //设置新连接创建的回调函数
+    //设置新连接创建和断开的回调函数
     server_.setConnectionCallback(std::bind(&ChatServer::OnConnection, this, _1));
     
     //设置用户读写事件的回调函数
@@ -29,7 +29,6 @@ loop_(loop) {
 void ChatServer::Start() {
     server_.start();
 }
-
 
 //用户连接处理回调函数
 void ChatServer::OnConnection(const muduo::net::TcpConnectionPtr& conn) {
@@ -45,8 +44,8 @@ void ChatServer::OnMessage(const muduo::net::TcpConnectionPtr& conn,    //连接
                      muduo::net::Buffer* buffer,            //缓冲区
                      muduo::Timestamp time) {               //时间信息
     std::string buf = buffer->retrieveAllAsString();
-    nlohmann::json js = nlohmann::json::parse(buf);
-    
+    nlohmann::json js = nlohmann::json::parse(buf);         //json反序列化
+
     //网络层代码和业务层代码进行解耦
     //通过js["msgid"]获取  =》 业务handler  =》  conn js time
     auto msgHandler = ChatService::Instance()->GetHandler(js["msgid"].get<int>());

@@ -8,8 +8,10 @@
 #include <muduo/net/TcpConnection.h>
 #include "json.hpp"
 
-#include "user_model.h"
-#include "offline_message_model.h"
+#include "model/user_model.h"
+#include "model/offline_message_model.h"
+#include "model/friend_model.h"
+#include "model/group_model.h"
 
 using MsgHandler = std::function<void(const muduo::net::TcpConnectionPtr&, 
                                         nlohmann::json&,
@@ -20,12 +22,24 @@ class ChatService {
 public:
     //获取单例对象的接口函数
     static ChatService* Instance();
+    
     //登录业务
     void Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
     //注册业务
     void Reg(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
     //一对一聊天业务
     void OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //添加好友业务
+    void AddFriend(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //创建群组业务
+    void CreateGroup(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //加入群组业务
+    void AddGroup(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //群组聊天业务
+    void GroupChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //请求最新信息业务
+    void Info(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    
     //获取消息对应的处理器
     MsgHandler GetHandler(int msgid);
     //服务器异常，业务重置
@@ -45,6 +59,8 @@ private:
     //数据操作类对象
     UserModel user_model_;
     OfflineMsgModel offline_msg_model_;
+    FriendModel friend_model_;
+    GroupModel group_model_;
 };
 
 

@@ -1,7 +1,7 @@
 #ifndef USER_MODEL_H_
 #define USER_MODEL_H_
 
-#include "user.h"
+#include "entity/user.h"
 
 class UserModel {
 public:

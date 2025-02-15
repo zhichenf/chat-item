@@ -10,7 +10,18 @@ enum EnMsgType {
     kLoginMsgAck,       //登录回应
     kRegMsg,            //注册消息
     kRegMsgAck,         //注册回应
-    kOneChatMsg         //1对1聊天消息
+    kOneChatMsg,        //1对1聊天消息
+    kAddFriendMsg,      //添加好友消息  
+    kAddFriendMsgAck,   //添加好友消息回应
+
+    kNotifyFriend,      //通知好友用户上线
+    kNotifyFriendExit,	//通知好友用户下线
+
+    kCreateGroupMsg,    //创建群组消息
+    kCreateGroupMsgAck,	//创建群组消息回应
+    kAddGroupMsg,       //加入群组消息
+    kAddGroupMsgAck,    //加入群组消息回应
+    kGroupChatMsg,      //群聊天
 };
 
 #endif

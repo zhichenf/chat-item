@@ -1,4 +1,4 @@
-#include "user.h"
+#include "entity/user.h"
 
 User::User(int id, std::string name, std::string password, std::string state) : 
 id_(id),

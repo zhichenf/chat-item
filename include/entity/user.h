@@ -16,7 +16,7 @@ public:
     std::string GetPwd();
     std::string GetState();
 
-private:
+protected:
     int id_;
     std::string name_;
     std::string password_;

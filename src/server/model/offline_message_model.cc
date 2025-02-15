@@ -1,4 +1,4 @@
-#include "offline_message_model.h"
+#include "model/offline_message_model.h"
 
 #include <memory>
 
