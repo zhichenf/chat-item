@@ -12,6 +12,7 @@
 #include "model/offline_message_model.h"
 #include "model/friend_model.h"
 #include "model/group_model.h"
+#include "redis/redis.h"
 
 using MsgHandler = std::function<void(const muduo::net::TcpConnectionPtr&, 
                                         nlohmann::json&,
@@ -39,6 +40,11 @@ public:
     void GroupChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
     //请求最新信息业务
     void Info(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+    //退出业务
+    void Quit(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time);
+
+    //redis上的消息回调
+    void HandleRedisSubscribeMessage(int , std::string);
     
     //获取消息对应的处理器
     MsgHandler GetHandler(int msgid);
@@ -61,6 +67,8 @@ private:
     OfflineMsgModel offline_msg_model_;
     FriendModel friend_model_;
     GroupModel group_model_;
+
+    Redis redis_;
 };
 
 

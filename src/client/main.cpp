@@ -20,7 +20,7 @@
 
 #include "json.hpp"
 
-#define DEBUG 1
+#define DEBUG 0
 
 // 记录当前系统登录的用户信息
 User g_current_user;
@@ -79,7 +79,6 @@ void ReadTaskHandler(int clientfd) {
         if (kOneChatMsg == js["msgid"].get<int>()) {        //发送的消息
             std::cout << js["time"].get<std::string>() << " [" << js["id"] << "]" << js["name"].get<std::string>()
             << " said: " << js["msg"].get<std::string>() << std::endl;
-            continue;
         } else if (kAddFriendMsgAck == js["msgid"].get<int>()) {        //添加好友回应
             if (g_current_user.GetId() == js["myid"].get<int>()) {
                 User user;
@@ -108,6 +107,7 @@ void ReadTaskHandler(int clientfd) {
             group.GetUsers().push_back(user);
             g_current_user_groups_list.push_back(group);
         } else if (kAddGroupMsgAck == js["msgid"].get<int>()) {         //添加群组回应
+            std::cout << g_current_user.GetId() << " add new group member" << std::endl;
             if (js["id"] == g_current_user.GetId()) {               //如果我是新加入的用户
                 Group group;
                 group.SetId(js["groupid"].get<int>());
@@ -150,6 +150,35 @@ void ReadTaskHandler(int clientfd) {
                     user.SetState("offline");
                 }
             }
+        } else if (kNotifyGroup == js["msgid"].get<int>()) {        //如果是群成员登录
+            for (auto& group : g_current_user_groups_list) {
+                if (group.GetId() == js["groupid"].get<int>()) {
+                    for (auto& user : group.GetUsers()) {
+                        if (user.GetId() == js["userid"].get<int>()) {
+                            user.SetState("online");
+                        }
+                    }
+                }
+            }
+        } else if (kNotifyGroupExit == js["msgid"].get<int>()) {
+            for (auto& group : g_current_user_groups_list) {
+                if (group.GetId() == js["groupid"].get<int>()) {
+                    for (auto& user : group.GetUsers()) {
+                        if (user.GetId() == js["userid"].get<int>()) {
+                            user.SetState("offline");
+                        }
+                    }
+                }
+            }
+        }  else if (kGroupChatMsg == js["msgid"].get<int>()) {            //收到群消息
+            std::string groupname = "";
+            for (auto& group : g_current_user_groups_list) {
+                if (group.GetId() == js["togroup"].get<int>()) {
+                    groupname = group.GetName();
+                }
+            }
+            std::cout << js["time"].get<std::string>() << " [" << js["id"] << "]" << js["name"].get<std::string>()
+            << " in group " << groupname << " said: " << js["msg"].get<std::string>() << std::endl; 
         }
     }
 }
@@ -171,7 +200,7 @@ std::string GetCurrentTime() {
 int main(int argc, char** argv) {
 
 
-#ifdef DEBUG
+#if DEBUG
     const char* ip = "127.0.0.1";
     uint16_t port = 6000;
 #else
@@ -212,6 +241,7 @@ int main(int argc, char** argv) {
         std::cout << "choice: ";
         std::string str;
         getline(std::cin,str);
+
         if (str.size() != 1 || str[0] < '1' || str[0] > '3') {
             std::cout << "invalid input" << std::endl;
             continue;
@@ -294,9 +324,20 @@ int main(int argc, char** argv) {
                                 if (js.contains("offlinemsg")) {
                                     std::vector<std::string> vec = js["offlinemsg"].get<std::vector<std::string>>();
                                     for (auto& std : vec) {
-                                        nlohmann::json js = nlohmann::json::parse(std);;
-                                        std::cout << js["time"] << "[" << js["id"] << "]" << js["name"] 
-                                        << " said: " << js["msg"] << std::endl;
+                                        nlohmann::json js2 = nlohmann::json::parse(std);
+                                        if (js2["msgid"] == kGroupChatMsg) {
+                                            std::string groupname = "";
+                                            for (auto& group : g_current_user_groups_list) {
+                                                if (group.GetId() == js2["togroup"].get<int>()) {
+                                                    groupname = group.GetName();
+                                                }
+                                            }
+                                            std::cout << js2["time"].get<std::string>() << " [" << js2["id"] << "]" << js2["name"].get<std::string>()
+                                            << " in group " << groupname << " said: " << js2["msg"].get<std::string>() << std::endl; 
+                                        } else {
+                                            std::cout << js2["time"] << "[" << js2["id"] << "]" << js2["name"] 
+                                            << " said: " << js2["msg"] << std::endl;
+                                        }
                                     }
                                 }
 
@@ -375,8 +416,6 @@ void CreateGroup(int, std::string);
 void AddGroup(int, std::string);
 // "groupchat" command handler
 void GroupChat(int, std::string);
-// "loginout" command handler
-void LoginOut(int, std::string);
 // "quit" command handler
 void Quit(int,std::string);
 
@@ -391,7 +430,6 @@ std::unordered_map<std::string,std::string> command_map = {
     {"'creategroup:groupname:groupdesc'", "create group."},
     {"'addgroup:groupid'", "add group."},
     {"'groupchat:groupid:message'", "chat in a group."},
-    {"'loginout'", "delete this user."},
     {"'quit'", "close the program."}
 };
 
@@ -404,7 +442,6 @@ std::unordered_map<std::string,std::function<void(int,std::string)>> command_han
     {"creategroup", CreateGroup},
     {"addgroup", AddGroup},
     {"groupchat", GroupChat},
-    {"loginout", LoginOut},
     {"quit", Quit}
 };
 
@@ -452,7 +489,7 @@ void GroupMember(int fd, std::string command_info) {
         if (group.GetId() == groupid) {
             std::cout << "----------------" << group.GetName() <<  "----------------" << std::endl;
             for (auto& user : group.GetUsers()) {
-                std::cout << user.GetName() << "(" << user.GetState() << ")" << std::endl;
+                std::cout << user.GetName() << "--->" << user.GetRole() << "(" << user.GetState() << ")" << std::endl;
             }
             std::cout << "----------------" << group.GetName() <<  "----------------" << std::endl;
         }
@@ -551,16 +588,38 @@ void AddGroup(int clientfd, std::string command_info) {
 }
 
 // "groupchat" command handler
-void GroupChat(int, std::string) {
+void GroupChat(int clientfd, std::string command_info) {
+    std::cout << "do groupchat service!!" << std::endl;
+    int index = command_info.find(":");
+    int groupid = atoi(command_info.substr(0,index).c_str());
+    std::string message = command_info.substr(index+1);
 
-}
+    nlohmann::json js;
+    js["msgid"] = kGroupChatMsg;
+    js["id"] = g_current_user.GetId();
+    js["name"] = g_current_user.GetName();
+    js["togroup"] = groupid;
+    js["msg"] = message;
+    js["time"] = GetCurrentTime();
 
-// "loginout" command handler
-void LoginOut(int, std::string) {
-
+    std::string buf = js.dump();
+    int len = send(clientfd, buf.c_str(), buf.size() + 1, 0);
+    if (-1 == len) {
+        std::cerr << "send error -> " << buf << std::endl;
+    }
 }
 
 // "quit" command handler
-void Quit(int, std::string) {
+void Quit(int clientfd, std::string command_info) {
+    nlohmann::json js;
+    js["msgid"] = kQuitMsg;
+    js["id"] = g_current_user.GetId();
 
+    std::string buf = js.dump();
+    int len = send(clientfd, buf.c_str(), buf.size() + 1, 0);
+    if (-1 == len) {
+        std::cerr << "send error -> " << buf << std::endl;
+    }
+
+    exit(0);
 }

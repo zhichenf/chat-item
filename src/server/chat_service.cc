@@ -27,6 +27,11 @@ ChatService::ChatService() {
     msg_handler_map_.insert({kCreateGroupMsg,std::bind(&ChatService::CreateGroup, this, _1, _2, _3)});
     msg_handler_map_.insert({kAddGroupMsg,std::bind(&ChatService::AddGroup, this, _1, _2, _3)});
     msg_handler_map_.insert({kGroupChatMsg,std::bind(&ChatService::GroupChat, this, _1, _2, _3)});
+    msg_handler_map_.insert({kQuitMsg,std::bind(&ChatService::Quit, this, _1, _2, _3)});
+
+    if (redis_.Connect()) {
+        redis_.InitNotifyHandler(std::bind(&ChatService::HandleRedisSubscribeMessage, this, _1, _2));
+    }
 }
 
 MsgHandler ChatService::GetHandler(int msgid){
@@ -55,6 +60,8 @@ void ChatService::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json
             conn->send(response.dump());
         } else {
             //登录成功
+            redis_.Subscribe(user.GetId());
+
             user.SetState("online");
             user_model_.UpdateState(user);
             {
@@ -97,6 +104,11 @@ void ChatService::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json
                         auto it = user_conn_map_.find(user2.GetId());
                         if (it != user_conn_map_.end()) {
                             it->second->send(js3.dump());
+                        } else {
+                            User user_online_info = user_model_.QueryId(user2.GetId());
+                            if (user_online_info.GetState() == "online") {
+                                redis_.Publish(user2.GetId(),js3.dump());
+                            }
                         }
                     }
                 }
@@ -115,13 +127,33 @@ void ChatService::Login(const muduo::net::TcpConnectionPtr& conn, nlohmann::json
                     grpjson["groupname"] = group.GetName();
                     grpjson["desc"] = group.GetDesc();
                     std::vector<std::string> user_v;
-                    for (auto& user : group.GetUsers()) {
-                        nlohmann::json js;
-                        js["id"] = user.GetId();
-                        js["name"] = user.GetName();
-                        js["state"] = user.GetState();
-                        js["role"] = user.GetRole();
-                        user_v.push_back(js.dump());
+                    for (auto& user2 : group.GetUsers()) {
+                        nlohmann::json js2;
+                        js2["id"] = user2.GetId();
+                        js2["name"] = user2.GetName();
+                        js2["state"] = user2.GetState();
+                        js2["role"] = user2.GetRole();
+                        user_v.push_back(js2.dump());
+                        if (user2.GetId() == user.GetId()) {
+                            continue;
+                        }
+                        //通知群其他成员用户已经上线
+                        {
+                            nlohmann::json js3;
+                            js3["msgid"] = kNotifyGroup;
+                            js3["userid"] = user.GetId();
+                            js3["groupid"] = group.GetId();
+                            std::lock_guard<std::mutex> lock(mutex_);
+                            auto it = user_conn_map_.find(user2.GetId());
+                            if (it != user_conn_map_.end()) {
+                                it->second->send(js3.dump());
+                            } else {
+                                User user_online_info = user_model_.QueryId(user2.GetId());
+                                if (user_online_info.GetState() == "online") {
+                                    redis_.Publish(user2.GetId(),js3.dump());
+                                }
+                            }
+                        }
                     }
                     grpjson["users"] = user_v;
                     group_v.push_back(grpjson.dump());
@@ -181,6 +213,12 @@ void ChatService::OneChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::js
         }
     }
 
+    User user = user_model_.QueryId(to_id);
+    if (user.GetState() == "online") {
+        redis_.Publish(to_id, js.dump());
+        return;
+    }
+
     //发送给的用户不在线
     offline_msg_model_.Insert(to_id,js.dump());
 }
@@ -209,7 +247,14 @@ void ChatService::AddFriend(const muduo::net::TcpConnectionPtr& conn, nlohmann::
     auto it = user_conn_map_.find(friendid);
     if (it != user_conn_map_.end()) {
         it->second->send(res.dump());
+    } else {
+        User user_online_info = user_model_.QueryId(friendid);
+        if (user_online_info.GetState() == "online") {
+            redis_.Publish(friendid,res.dump());
+        }
     }
+
+
 }
 
 //创建群组业务
@@ -241,13 +286,15 @@ void ChatService::AddGroup(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
     std::pair<std::vector<GroupUser>,std::vector<std::string>> p =  group_model_.QueryGroupById(groupid);
     std::vector<GroupUser> user_vec = p.first;
     std::vector<std::string> users;
+
+    //群组又有user成员json序列化
     for (auto& user : user_vec) {
-        nlohmann::json js;
-        js["id"] = user.GetId();
-        js["name"] = user.GetName();
-        js["state"] = user.GetState();
-        js["role"] = user.GetRole();
-        users.push_back(js.dump());
+        nlohmann::json js2;
+        js2["id"] = user.GetId();
+        js2["name"] = user.GetName();
+        js2["state"] = user.GetState();
+        js2["role"] = user.GetRole();
+        users.push_back(js2.dump());
     }
     nlohmann::json resp;
 
@@ -266,6 +313,11 @@ void ChatService::AddGroup(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
         auto it = user_conn_map_.find(user.GetId());
         if (it != user_conn_map_.end()) {
             it->second->send(resp.dump());
+        } else {
+            User user_online_info = user_model_.QueryId(user.GetId());
+            if (user_online_info.GetState() == "online") {
+                redis_.Publish(user.GetId(),resp.dump());
+            }
         }
     }
 }
@@ -274,19 +326,115 @@ void ChatService::AddGroup(const muduo::net::TcpConnectionPtr& conn, nlohmann::j
 void ChatService::GroupChat(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time) {
     std::cout << "do groupchat service!!" << std::endl;
     int userid = js["id"].get<int>();
-    int groupid = js["groupid"].get<int>();
+    int groupid = js["togroup"].get<int>();
     std::vector<int> userid_vec = group_model_.QueryGroupUsers(userid,groupid);
 
     std::lock_guard<std::mutex> lock(mutex_);
     for (int id : userid_vec) {
+        std::cout << id << std::endl;
         auto it = user_conn_map_.find(id);
         if (it != user_conn_map_.end()) {
             it->second->send(js.dump());
         } else {
-            offline_msg_model_.Insert(id,js.dump());
+            User groupuser = user_model_.QueryId(id);
+            if (groupuser.GetState() == "online") {
+                redis_.Publish(id,js.dump());
+            } else {
+                offline_msg_model_.Insert(id,js.dump());
+            }
         }
     }
 }
+
+void ChatService::Quit(const muduo::net::TcpConnectionPtr& conn, nlohmann::json& js, muduo::Timestamp time) {
+    User user;
+    int userid = js["id"].get<int>();
+    user.SetId(userid);
+
+    {
+        std::lock_guard<std::mutex> lg(mutex_);
+        auto it = user_conn_map_.find(userid);
+        if (it != user_conn_map_.end()) {
+            user_conn_map_.erase(it);
+        }
+    }
+
+    //查询该用户的好友信息 
+    std::vector<User> friends_vec = friend_model_.Query(user.GetId());
+    if (!friends_vec.empty()) {
+        std::vector<std::string> vec2;
+        for (auto& user2 : friends_vec) {
+            //通知在线好友用户下线
+            {
+                nlohmann::json js3;
+                js3["msgid"] = kNotifyFriendExit;
+                js3["userid"] = user.GetId();
+                std::lock_guard<std::mutex> lock(mutex_);
+                auto it = user_conn_map_.find(user2.GetId());
+                if (it != user_conn_map_.end()) {
+                    it->second->send(js3.dump());
+                } else {
+                    User user_online_info = user_model_.QueryId(user2.GetId());
+                    if (user_online_info.GetState() == "online") {
+                        redis_.Publish(user2.GetId(),js3.dump());
+                    }
+                }
+            }
+        }
+    } 
+
+    //查询用户的群组信息
+    std::vector<Group> group_user_vec = group_model_.QueryGroups(user.GetId());
+    if (!group_user_vec.empty()) {
+        for (auto& group : group_user_vec) {
+            std::vector<std::string> user_v;
+            for (auto& user2 : group.GetUsers()) {
+                if (user2.GetId() == user.GetId()) {
+                    continue;
+                }
+                //通知群其他成员用户下线
+                {
+                    nlohmann::json js3;
+                    js3["msgid"] = kNotifyGroupExit;
+                    js3["userid"] = user.GetId();
+                    js3["groupid"] = group.GetId();
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    auto it = user_conn_map_.find(user2.GetId());
+                    if (it != user_conn_map_.end()) {
+                        it->second->send(js3.dump());
+                    } else {
+                        User user_online_info = user_model_.QueryId(user2.GetId());
+                        if (user_online_info.GetState() == "online") {
+                            redis_.Publish(user2.GetId(),js3.dump());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    redis_.Unsubscribe(user.GetId());
+
+    //更新用户状态
+    if (user.GetId() != -1) {
+        user.SetState("offline");
+        user_model_.UpdateState(user);
+    }
+
+}
+
+//
+void ChatService::HandleRedisSubscribeMessage(int userid, std::string msg) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = user_conn_map_.find(userid);      //如果有一个聊天业务到达，先redis发布，订阅的用户就能收到聊天信息
+    if (it != user_conn_map_.end()) {
+        it->second->send(msg);
+        return;
+    }
+
+    offline_msg_model_.Insert(userid,msg);
+}
+
 
 //服务器异常，业务重置
 void ChatService::Reset() {
@@ -308,24 +456,61 @@ void ChatService::ClientCloseException(const muduo::net::TcpConnectionPtr conn) 
         }
     }
 
-     //查询该用户的好友信息 
-     std::vector<User> friends_vec = friend_model_.Query(user.GetId());
-     if (!friends_vec.empty()) {
-         std::vector<std::string> vec2;
-         for (auto& user2 : friends_vec) {
-             //通知在线好友用户下线
-             {
-                 nlohmann::json js3;
-                 js3["msgid"] = kNotifyFriendExit;
-                 js3["userid"] = user.GetId();
-                 std::lock_guard<std::mutex> lock(mutex_);
-                 auto it = user_conn_map_.find(user2.GetId());
-                 if (it != user_conn_map_.end()) {
-                     it->second->send(js3.dump());
-                 }
-             }
-         }
-     } 
+    //查询该用户的好友信息 
+    std::vector<User> friends_vec = friend_model_.Query(user.GetId());
+    if (!friends_vec.empty()) {
+        std::vector<std::string> vec2;
+        for (auto& user2 : friends_vec) {
+            //通知在线好友用户下线
+            {
+                nlohmann::json js3;
+                js3["msgid"] = kNotifyFriendExit;
+                js3["userid"] = user.GetId();
+                std::lock_guard<std::mutex> lock(mutex_);
+                auto it = user_conn_map_.find(user2.GetId());
+                if (it != user_conn_map_.end()) {
+                    it->second->send(js3.dump());
+                } else {
+                    User user_online_info = user_model_.QueryId(user2.GetId());
+                    if (user_online_info.GetState() == "online") {
+                        redis_.Publish(user2.GetId(),js3.dump());
+                    }
+                }
+            }
+        }
+    } 
+
+    //查询用户的群组信息
+    std::vector<Group> group_user_vec = group_model_.QueryGroups(user.GetId());
+    if (!group_user_vec.empty()) {
+        for (auto& group : group_user_vec) {
+            std::vector<std::string> user_v;
+            for (auto& user2 : group.GetUsers()) {
+                if (user2.GetId() == user.GetId()) {
+                    continue;
+                }
+                //通知群其他成员用户下线
+                {
+                    nlohmann::json js3;
+                    js3["msgid"] = kNotifyGroupExit;
+                    js3["userid"] = user.GetId();
+                    js3["groupid"] = group.GetId();
+                    std::lock_guard<std::mutex> lock(mutex_);
+                    auto it = user_conn_map_.find(user2.GetId());
+                    if (it != user_conn_map_.end()) {
+                        it->second->send(js3.dump());
+                    } else {
+                        User user_online_info = user_model_.QueryId(user2.GetId());
+                        if (user_online_info.GetState() == "online") {
+                            redis_.Publish(user2.GetId(),js3.dump());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    redis_.Unsubscribe(user.GetId());
 
     //更新用户状态
     if (user.GetId() != -1) {

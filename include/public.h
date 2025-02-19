@@ -16,12 +16,16 @@ enum EnMsgType {
 
     kNotifyFriend,      //通知好友用户上线
     kNotifyFriendExit,	//通知好友用户下线
+    kNotifyGroup,		//通知群成员用户上线
+    kNotifyGroupExit,	//通知群成员用户下线
 
     kCreateGroupMsg,    //创建群组消息
     kCreateGroupMsgAck,	//创建群组消息回应
     kAddGroupMsg,       //加入群组消息
     kAddGroupMsgAck,    //加入群组消息回应
     kGroupChatMsg,      //群聊天
+
+    kQuitMsg			//退出消息
 };
 
 #endif
